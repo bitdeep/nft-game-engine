@@ -533,6 +533,7 @@ contract Token is ERC20, Context, Ownable {
     mapping(string => uint) public betIdByHash;
     mapping(uint => uint) public betAmountById;
     mapping(address => uint) public lastBetIdBySender;
+    mapping(address => uint) public senderByBetId;
     Uint256ArrayLib.Values private myOpenBets;
     uint tax = 1000;
     address taxTo;
@@ -540,6 +541,8 @@ contract Token is ERC20, Context, Ownable {
         uint hpA;
         uint hpB;
         uint paid;
+        address userA;
+        address userB;
     }
     constructor(){
         taxTo = msg.sender;
@@ -551,6 +554,7 @@ contract Token is ERC20, Context, Ownable {
         betIdByHash[hash] = id;
         betAmountById[id] = msg.value;
         lastBetIdBySender[msg.sender] = id;
+        senderByBetId[id] = msg.sender;
         myOpenBets.pushValue(id);
     }
     function setTax(uint _tax, address _taxTo) public onlyOwner{
@@ -561,24 +565,34 @@ contract Token is ERC20, Context, Ownable {
         return myOpenBets.getAllValues();
     }
 
-    function bet(string memory betId, uint _bet0, uint _bet1) public {
+    function bet(string memory hash, uint _bet0, uint _bet1) public {
         require(betAmountById[_bet0], "bet0: invalid deposit");
         require(betAmountById[_bet1], "bet1: invalid deposit");
         require(betAmountById[_bet0] == betAmountById[_bet1], "bet are not equals");
-        BetResult storage bet = betResults[betId];
+        BetResult storage bet = betResults[hash];
         require(bet.hpA == 0 && bet.hpB == 0, "bet slot already in use");
         bet.paid = betAmountById[_bet0] + betAmountById[_bet1];
         uint tax = bet.paid.mul(tax).div(10000);
         bet.paid -= tax;
-        (bool transferWinnerStatus,) = payable(msg.sender).call{value : bet.paid}("");
-        require(transferWinnerStatus, "Failed to send money to winner");
         (bool transferTaxStatus,) = payable(taxTo).call{value : tax}("");
         require(transferTaxStatus, "Failed to send money to treasure");
-        bet.hpA = getHpHit(_bet0);
-        bet.hpB = getHpHit(_bet1);
+
+        bet.userA = senderByBetId[_bet0];
+        bet.hpA = getHpHit(_bet0, hash);
+
+        bet.userB = senderByBetId[_bet1];
+        bet.hpB = getHpHit(_bet1, hash);
+
+        betAmountById[_bet0] = 0;
+        betAmountById[_bet1] = 0;
+
+        address winner = bet.userA > bet.userB ? bet.userA : bet.userB ;
+        (bool transferWinnerStatus,) = payable(winner).call{value : bet.paid}("");
+        require(transferWinnerStatus, "Failed to send money to winner");
+
     }
 
-    function getHpHit(uint id) internal returns (uint){
+    function getHpHit(uint id, string memory hash) internal returns (uint){
         uint256 _randomNumber;
         bytes32 _structHash = keccak256(abi.encode(msg.sender, id, block.difficulty, gasleft()));
         _randomNumber = uint256(_structHash);
