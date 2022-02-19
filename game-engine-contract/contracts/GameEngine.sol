@@ -569,11 +569,18 @@ contract Token is ERC20, Context, Ownable {
         require(bet.hpA == 0 && bet.hpB == 0, "bet slot already in use");
         bet.paid = betAmountById[_bet0] + betAmountById[_bet1];
         uint tax = bet.paid.mul(tax).div(10000);
+        bet.paid -= tax;
+        (bool transferWinnerStatus,) = payable(msg.sender).call{value : bet.paid}("");
+        require(transferWinnerStatus, "Failed to send money to winner");
+        (bool transferTaxStatus,) = payable(taxTo).call{value : tax}("");
+        require(transferTaxStatus, "Failed to send money to treasure");
+        bet.hpA = getHpHit(_bet0);
+        bet.hpB = getHpHit(_bet1);
     }
 
-    function getHpHit(address user, uint _bet0, uint _bet1) internal returns (uint){
+    function getHpHit(uint id) internal returns (uint){
         uint256 _randomNumber;
-        bytes32 _structHash = keccak256(abi.encode(user, _bet0, _bet1, block.difficulty, gasleft()));
+        bytes32 _structHash = keccak256(abi.encode(msg.sender, id, block.difficulty, gasleft()));
         _randomNumber = uint256(_structHash);
         assembly {_randomNumber := mod(_randomNumber, 100)}
         return _randomNumber;
